@@ -1,0 +1,36 @@
+/**
+ * スプレッドシートが開かれたときに実行される関数
+ */
+function onOpen() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  
+  // --- 1. カスタムメニューを作成する処理 ---
+  ui.createMenu('カスタム操作')
+    .addItem('一括ワークフローを実行', 'processAndCountDColumn')
+    .addToUi();
+
+  // --- 2. 今日の日付（Mdd形式）のシートを表示する処理 ---
+  const today = new Date();
+  
+  // シート名の形式を "225" のように 月(1-2桁)+日(2桁) に設定
+  // 1月5日なら "105"、12月25日なら "1225" になります
+  const todayName = Utilities.formatDate(today, "JST", "Mdd");
+  
+  const sheet = ss.getSheetByName(todayName);
+  
+  if (sheet) {
+    sheet.activate();
+  } else {
+    // シートが見つからない場合に備えてログを残す
+    console.log("シートが見つかりませんでした: " + todayName);
+  }
+}
+
+/**
+ * 実行されるメインの処理
+ */
+function processAndCountDColumn() {
+  Browser.msgBox('一括ワークフローを開始します。');
+  // ここにD列のカウント処理などを記述
+}
