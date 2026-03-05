@@ -1,0 +1,66 @@
+/**
+ * 貼付け用シートのD列を加工し、その件数を各シートのB1に集計、
+ * かつD列を右揃えにする統合処理
+ */
+function processAndCountDColumn() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("貼付け用");
+
+  // 1. シートの存在確認
+  if (!sheet) {
+    Browser.msgBox("「貼付け用」シートが見つかりませんでした。");
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return;
+
+  // 2. D列のデータを一括取得
+  const range = sheet.getRange(1, 4, lastRow, 1);
+  const values = range.getValues();
+
+  const counts = {};
+  const updatedValues = values.map(row => {
+    let val = row[0];
+    let key = "";
+
+    // A. 日付オブジェクトの場合の処理
+    if (val instanceof Date) {
+      key = (val.getMonth() + 1).toString() + val.getDate().toString().padStart(2, '0');
+    } else {
+      // B. 文字列・数値の場合の処理
+      let strVal = String(val).trim();
+      // 2025または2026を削除
+      let newVal = strVal.replace(/^(2025|2026)/, "");
+      // 数字のみなら先頭の「0」を除去（例: 0206 -> 206）
+      if (newVal !== "" && /^\d+$/.test(newVal)) {
+        key = String(Number(newVal));
+      } else {
+        key = newVal;
+      }
+    }
+
+    // 集計用オブジェクトにカウント
+    if (key !== "") {
+      counts[key] = (counts[key] || 0) + 1;
+    }
+
+    return [key];
+  });
+
+  // 3. 加工した値をD列に書き戻す
+  range.setValues(updatedValues);
+
+  // 4. D列を右揃えにする
+  range.setHorizontalAlignment("right");
+
+  // 5. 各シートのB1に集計結果を書き込む
+  for (let sheetName in counts) {
+    const targetSheet = ss.getSheetByName(sheetName);
+    if (targetSheet) {
+      targetSheet.getRange("B1").setValue(counts[sheetName]);
+    }
+  }
+
+  Browser.msgBox("処理（加工・集計・整形）が完了しました。");
+}
