@@ -1,0 +1,162 @@
+function onEdit(e) {
+  if (!e) return;
+  const ss = e.source;
+  const sheet = ss.getActiveSheet();
+  const sheetName = sheet.getName().trim();
+
+  // 1. シート名のチェック（3桁 または 4桁の数字かどうか）
+  // 206 などの3桁も許可するために {3,4} に変更し、比較用に先頭の0を除去
+  if (!/^\d{3,4}$/.test(sheetName)) return;
+  const targetDateMD = String(Number(sheetName)); // "0206" なら "206" に変換
+
+  const master = ss.getSheetByName("貼付け用");
+  if (!master) return;
+
+  // 2. マスタデータ（A列, D列）のMap化
+  const masterMap = new Map();
+  const lastRowMaster = master.getLastRow() || 1; 
+  const masterData = master.getRange(1, 1, lastRowMaster, 4).getValues();
+
+  for (let i = 0; i < masterData.length; i++) {
+    const gNo = String(masterData[i][0] || "").trim();
+    if (!gNo) continue;
+    const dVal = masterData[i][3]; 
+    const dMD = normalizeDateCustom(dVal); // カスタム正規化（206 or 1015）
+    masterMap.set(gNo, { date: dMD, row: i + 1 });
+  }
+
+  // 3. 処理対象範囲の決定
+  const startRow = 4;
+  const numCols = 20; 
+  let sheetLastRow = sheet.getLastRow();
+  const editedRow = e.range.getRow();
+  if (editedRow > sheetLastRow) sheetLastRow = editedRow;
+  
+  let numRows = sheetLastRow - startRow + 1;
+  if (numRows <= 0) return;
+
+  // 4. 値の取得
+  const targetRange = sheet.getRange(startRow, 1, numRows, numCols);
+  const allTargetVals = targetRange.getValues();
+  
+  // 5. 重複チェック
+  const countMap = new Map();
+  for (let r = 0; r < numRows; r++) {
+    for (let c = 0; c < numCols; c++) {
+      const val = String(allTargetVals[r][c]).trim();
+      if (val) {
+        countMap.set(val, (countMap.get(val) || 0) + 1);
+      }
+    }
+  }
+
+  // 6. 装飾配列の作成
+  const backgrounds = [];
+  const fontColors = [];
+  const matchedMasterRows = new Set();
+
+  for (let r = 0; r < numRows; r++) {
+    const backgroundRow = [];
+    const fontColorRow = [];
+
+    for (let c = 0; c < numCols; c++) {
+      const cellVal = String(allTargetVals[r][c] || "").trim();
+
+      if (!cellVal) {
+        backgroundRow.push(null);
+        fontColorRow.push(null);
+        continue;
+      }
+
+      const isDuplicate = countMap.get(cellVal) >= 2;
+
+      if (isDuplicate) {
+        backgroundRow.push(null);
+        fontColorRow.push("#ff0000");
+      } else {
+        let isMasterMatched = false;
+        
+        if (masterMap.has(cellVal)) {
+          const mInfo = masterMap.get(cellVal);
+          // 変換後の文字列（"206" や "1015"）同士で比較
+          if (mInfo.date && mInfo.date === targetDateMD) {
+            isMasterMatched = true;
+            matchedMasterRows.add(mInfo.row);
+          }
+        }
+        
+        if (isMasterMatched) {
+          backgroundRow.push("#cfe2f3");
+          fontColorRow.push(null); 
+        } else {
+          backgroundRow.push(null);
+          fontColorRow.push(null);
+        }
+      }
+    }
+    backgrounds.push(backgroundRow);
+    fontColors.push(fontColorRow);
+  }
+
+  // 7. 装飾の一括適用
+  targetRange.setBackgrounds(backgrounds);
+  targetRange.setFontColors(fontColors);
+
+  // 8. マスタシートの背景色更新
+  updateMasterBackgrounds(master, lastRowMaster, matchedMasterRows, targetDateMD, masterData);
+}
+
+/**
+ * マスタシートの背景色を更新する
+ */
+function updateMasterBackgrounds(masterSheet, lastRow, matchedRowsSet, targetDateMD, masterData) {
+  const numColsToColor = 8; 
+  const masterRange = masterSheet.getRange(1, 1, lastRow, numColsToColor);
+  const masterBackgrounds = masterRange.getBackgrounds();
+
+  const blueRow = Array(numColsToColor).fill("#cfe2f3");
+  const clearRow = Array(numColsToColor).fill(null);
+
+  for (let i = 0; i < masterData.length; i++) {
+    const currentRow = i + 1;
+    const dVal = masterData[i][3];
+    const dMD = normalizeDateCustom(dVal);
+
+    if (dMD === targetDateMD) {
+      if (matchedRowsSet.has(currentRow)) {
+        masterBackgrounds[i] = blueRow;
+      } else {
+        masterBackgrounds[i] = clearRow;
+      }
+    }
+  }
+  masterRange.setBackgrounds(masterBackgrounds);
+}
+
+/**
+ * 2026等を削除し、先頭の0を除去して文字列にする (0206 -> "206", 1015 -> "1015")
+ */
+function normalizeDateCustom(v) {
+  if (v === null || v === undefined || v === "") return null;
+
+  let s = "";
+  // Dateオブジェクトの場合
+  if (Object.prototype.toString.call(v) === "[object Date]") {
+    if (isNaN(v.getTime())) return null;
+    // 月(0-11)に1足して、日と結合
+    s = (v.getMonth() + 1).toString() + v.getDate().toString().padStart(2, '0');
+  } else {
+    // 文字列の場合
+    s = String(v).trim().replace(/\D+/g, '');
+  }
+
+  // 西暦(2025/2026)を削除
+  s = s.replace(/^(2025|2026)/, "");
+
+  // 数字のみの場合、先頭の「0」を除去する (例: 0206 -> 206)
+  if (s.length > 0 && /^\d+$/.test(s)) {
+    return String(Number(s));
+  }
+
+  return null;
+}
